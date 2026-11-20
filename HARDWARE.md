@@ -6,11 +6,12 @@ Use a Linux CUDA machine. The safest fidelity-first configuration is one NVIDIA 
 
 | Profile | Practical GPU tier | VRAM gate | Quality / speed notes |
 |---|---|---:|---|
-| `quality` | H100 80 GB, A100 80 GB, A100 80 GB PCIe | 70 GiB detected | FP16 DiTs, best fidelity; recommended baseline |
+| `quality_offload` | H100 80 GB, A100 80 GB, A100 80 GB PCIe | 40 GiB detected | FP16 DiTs with 8 CPU-swapped blocks; recommended 80 GB baseline |
+| `quality` | More than 80 GB usable VRAM | 70 GiB detected | FP16 without block swapping; fastest but can exceed 80 GB while merging/casting the LoRA |
 | `balanced` | L40S 48 GB, RTX 6000 Ada 48 GB, A6000 48 GB | 40 GiB detected | Scaled FP8 DiTs and FP8 T5; lower memory, small quality tradeoff |
 | `low_vram` | RTX 4090 24 GB or similar | 22 GiB detected | FP8 plus 20 swapped blocks; much slower and most likely to need tuning |
 
-The low-VRAM row is a supported attempt, not a throughput guarantee. Musubi documents 24 GB inference through FP8 and block swapping, while the official Wan I2V-A14B single-GPU path specifies at least 80 GB VRAM. Start with `quality` for checkpoint evaluation.
+The low-VRAM row is a supported attempt, not a throughput guarantee. Musubi documents 24 GB inference through FP8 and block swapping, while the official Wan I2V-A14B single-GPU path specifies at least 80 GB VRAM. Start with `quality_offload` for checkpoint evaluation.
 
 ## Storage budget
 

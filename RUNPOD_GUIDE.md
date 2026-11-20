@@ -289,7 +289,8 @@ LORA_PATH=/workspace/nagharsubject_high_checkpoints/high/nagharsubject_high-step
 REFERENCE_ROOT=/workspace/prepared_wan22_i2v_curated/reference_images
 REFERENCE_IMAGE=/workspace/prepared_wan22_i2v_curated/reference_images/open_palm.png
 
-MEMORY_PROFILE=quality
+MEMORY_PROFILE=quality_offload
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 LORA_STRENGTH=1.0
 SEED=42
 VERIFY_MODEL_HASHES=1
@@ -664,6 +665,13 @@ Use an official CUDA-compatible PyTorch template and a GPU Pod rather than a CPU
 ### CUDA out of memory
 
 First stop other GPU processes and check `nvidia-smi`. Then edit `.env`:
+
+```dotenv
+MEMORY_PROFILE=quality_offload
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+```
+
+`quality_offload` preserves FP16 DiT weights but swaps eight transformer blocks through CPU memory, reducing the peak during model loading and LoRA merging. If that still fails, use:
 
 ```dotenv
 MEMORY_PROFILE=balanced

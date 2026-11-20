@@ -70,10 +70,11 @@ MODEL_MANIFEST = (
 
 PROFILE_ARGS = {
     "quality": ("--lazy_loading", "--vae_cache_cpu"),
+    "quality_offload": ("--blocks_to_swap", "8", "--lazy_loading", "--vae_cache_cpu"),
     "balanced": ("--fp8", "--fp8_scaled", "--fp8_t5", "--lazy_loading", "--vae_cache_cpu"),
     "low_vram": ("--fp8", "--fp8_t5", "--blocks_to_swap", "20", "--lazy_loading", "--vae_cache_cpu"),
 }
-PROFILE_MIN_VRAM_GIB = {"quality": 70.0, "balanced": 40.0, "low_vram": 22.0}
+PROFILE_MIN_VRAM_GIB = {"quality": 70.0, "quality_offload": 40.0, "balanced": 40.0, "low_vram": 22.0}
 
 
 def load_dotenv(path: Path) -> None:
@@ -233,7 +234,7 @@ class Config:
             lora_path=Path(os.environ.get("LORA_PATH", str(default_lora))).expanduser().resolve(),
             reference_root=reference_root,
             reference_image=Path(os.environ.get("REFERENCE_IMAGE", str(reference_root / "open_palm.png"))).expanduser().resolve(),
-            profile=os.environ.get("MEMORY_PROFILE", "quality").strip().lower(),
+            profile=os.environ.get("MEMORY_PROFILE", "quality_offload").strip().lower(),
             lora_strength=float(os.environ.get("LORA_STRENGTH", "1.0")),
             seed=int(os.environ.get("SEED", "42")),
             verify_model_hashes=env_bool("VERIFY_MODEL_HASHES", True),

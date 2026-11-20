@@ -16,6 +16,7 @@ wan22_babaji_inference/
 ├── prompts/babaji_snippets.jsonl
 ├── tests/test_inference.py
 ├── RUNPOD_GUIDE.md
+├── OOM_TROUBLESHOOTING.md
 ├── CHECKPOINT.md
 ├── HARDWARE.md
 └── RESPONSIBLE_USE.md
@@ -119,7 +120,8 @@ The default geometry matches the training data: 768×576, 81 frames, 16 FPS, 30 
 
 Edit `MEMORY_PROFILE` in `.env`:
 
-- `quality`: native FP16 DiTs with lazy loading; use for evaluation on 80 GB GPUs.
+- `quality_offload`: native FP16 plus eight CPU-swapped DiT blocks; recommended for 80 GB GPUs and preserves FP16 weight quality.
+- `quality`: native FP16 with no block swapping; fastest, but the LoRA merge/cast peak can exceed an 80 GB GPU.
 - `balanced`: scaled FP8 plus FP8 T5; intended for 48 GB-class GPUs.
 - `low_vram`: FP8 plus 20-block CPU swapping; intended for 24 GB cards and considerably slower.
 

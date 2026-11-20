@@ -82,6 +82,30 @@ class InferenceTests(unittest.TestCase):
             self.assertIn("--fp8_scaled", command)
             self.assertIn("--fp8_t5", command)
 
+    def test_quality_offload_profile_preserves_fp16_and_swaps_eight_blocks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cfg = self.make_config(Path(directory), profile="quality_offload")
+            pipeline = inference.InferencePipeline(cfg, dry_run=True)
+            command = pipeline.build_command(
+                save_path=cfg.output_root,
+                prompt=inference.DEFAULT_PROMPT,
+                reference=cfg.reference_image,
+                prompt_file=None,
+                negative_prompt=inference.DEFAULT_NEGATIVE,
+                seed=42,
+                height=576,
+                width=768,
+                frames=81,
+                fps=16,
+                steps=30,
+                guidance=5.0,
+                lora_strength=1.0,
+            )
+            self.assertNotIn("--fp8", command)
+            self.assertEqual(command[command.index("--blocks_to_swap") + 1], "8")
+            self.assertIn("--lazy_loading", command)
+            self.assertIn("--vae_cache_cpu", command)
+
     def test_invalid_frame_count_is_rejected(self):
         with self.assertRaises(RuntimeError):
             inference.InferencePipeline._validate_shape(576, 768, 80)
