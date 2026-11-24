@@ -107,6 +107,22 @@ bash run_inference.sh generate --dry-run
 
 This adds plain FP8, FP8 T5, and 20 swapped blocks. It uses much less VRAM but is slower and has the largest potential quality tradeoff.
 
+## RTX 5090 (32 GB)
+
+Do not use the A100/H100 `quality` or `quality_offload` profiles on an RTX 5090. Start with:
+
+```dotenv
+MEMORY_PROFILE=rtx5090_quality
+```
+
+This uses scaled FP8, FP8 T5, 12 swapped blocks, lazy expert loading, CPU VAE cache, and the lower-memory Wan 2.1-style time embedding. If it still OOMs after other GPU jobs are stopped, use:
+
+```bash
+MEMORY_PROFILE=rtx5090_safe bash run_inference.sh generate [the same generation options]
+```
+
+The safe profile swaps 20 blocks and therefore trades throughput for more VRAM headroom. `rtx5090_fast` is a speed/quality option, not an OOM fallback. The 5090 also needs a CUDA 12.8-compatible PyTorch build; run `setup_linux.sh` and confirm its CUDA smoke test before diagnosing a kernel-compatibility failure as an OOM.
+
 ## Do not start by changing these
 
 - LoRA strength: affects model behavior, not the size of the loaded base DiT.

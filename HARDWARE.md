@@ -10,6 +10,9 @@ Use a Linux CUDA machine. The safest fidelity-first configuration is one NVIDIA 
 | `quality` | More than 80 GB usable VRAM | 70 GiB detected | FP16 without block swapping; fastest but can exceed 80 GB while merging/casting the LoRA |
 | `balanced` | L40S 48 GB, RTX 6000 Ada 48 GB, A6000 48 GB | 40 GiB detected | Scaled FP8 DiTs and FP8 T5; lower memory, small quality tradeoff |
 | `low_vram` | RTX 4090 24 GB or similar | 22 GiB detected | FP8 plus 20 swapped blocks; much slower and most likely to need tuning |
+| `rtx5090_quality` | RTX 5090 32 GB | 30 GiB detected | Scaled FP8, 12 swapped blocks, lazy experts; best 5090 checkpoint-comparison profile |
+| `rtx5090_fast` | RTX 5090 32 GB | 30 GiB detected | Adds fast FP8 arithmetic; faster with a larger quality tradeoff |
+| `rtx5090_safe` | RTX 5090 32 GB | 30 GiB detected | Scaled FP8 with 20 swapped blocks; slower OOM fallback |
 
 The low-VRAM row is a supported attempt, not a throughput guarantee. Musubi documents 24 GB inference through FP8 and block swapping, while the official Wan I2V-A14B single-GPU path specifies at least 80 GB VRAM. Start with `quality_offload` for checkpoint evaluation.
 
@@ -33,6 +36,7 @@ Both DiTs are required even though only the high-noise one receives the LoRA. Wa
 - OS: Ubuntu 22.04 or 24.04 on x86-64.
 - GPU: CUDA-capable NVIDIA GPU; Ampere or newer is preferred.
 - Driver: new enough for the CUDA runtime selected by `TORCH_INDEX_URL` (the default wheel index is CUDA 12.8).
+- RTX 5090: Blackwell compute capability 12.0 requires a CUDA 12.8-compatible build; use a current 570-series-or-newer driver.
 - CPU: 8 vCPU minimum; 16+ recommended.
 - RAM: 64 GB minimum for the low-VRAM profile; 96–128 GB recommended for model loading and offload headroom.
 - Disk: persistent SSD or RunPod network volume. Avoid keeping unique weights only on the container disk.

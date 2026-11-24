@@ -32,3 +32,5 @@ It intentionally does not pass `--lora_weight`, which would attach the file to t
 
 Step 200 is an early checkpoint. Evaluate it against the base model and later checkpoints if they become available. A high-noise LoRA can improve learned motion/composition but cannot by itself provide the identity/detail refinement of a separately trained low-noise LoRA.
 
+The inference validator now accepts later files named with the standard `-step########.safetensors` suffix when the embedded `ss_steps` metadata matches that filename and the model metadata still identifies the Wan I2V high-noise expert. Step 200 retains its built-in pinned digest. For 400/600 comparisons, create a SHA-256 manifest before upload and pass it to `compare_checkpoints.py`; see `RTX5090_GUIDE.md`.
+

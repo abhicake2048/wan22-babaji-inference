@@ -23,7 +23,7 @@ class InferenceTests(unittest.TestCase):
             model_root=root / "models",
             output_root=root / "outputs",
             musubi_dir=root / "musubi",
-            lora_path=root / inference.LORA_FILENAME,
+            lora_path=root / inference.DEFAULT_LORA_FILENAME,
             reference_root=reference_root,
             reference_image=reference_root / "open_palm.png",
             profile=profile,
@@ -105,6 +105,71 @@ class InferenceTests(unittest.TestCase):
             self.assertEqual(command[command.index("--blocks_to_swap") + 1], "8")
             self.assertIn("--lazy_loading", command)
             self.assertIn("--vae_cache_cpu", command)
+
+    def test_rtx5090_quality_profile_uses_scaled_fp8_and_twelve_swapped_blocks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cfg = self.make_config(Path(directory), profile="rtx5090_quality")
+            command = inference.InferencePipeline(cfg, dry_run=True).build_command(
+                save_path=cfg.output_root,
+                prompt=inference.DEFAULT_PROMPT,
+                reference=cfg.reference_image,
+                prompt_file=None,
+                negative_prompt=inference.DEFAULT_NEGATIVE,
+                seed=42,
+                height=576,
+                width=768,
+                frames=81,
+                fps=16,
+                steps=30,
+                guidance=5.0,
+                lora_strength=1.0,
+            )
+            self.assertIn("--fp8", command)
+            self.assertIn("--fp8_scaled", command)
+            self.assertNotIn("--fp8_fast", command)
+            self.assertEqual(command[command.index("--blocks_to_swap") + 1], "12")
+            self.assertIn("--force_v2_1_time_embedding", command)
+
+    def test_rtx5090_fast_profile_enables_fast_fp8(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cfg = self.make_config(Path(directory), profile="rtx5090_fast")
+            command = inference.InferencePipeline(cfg, dry_run=True).build_command(
+                save_path=cfg.output_root,
+                prompt=inference.DEFAULT_PROMPT,
+                reference=cfg.reference_image,
+                prompt_file=None,
+                negative_prompt=inference.DEFAULT_NEGATIVE,
+                seed=42,
+                height=576,
+                width=768,
+                frames=81,
+                fps=16,
+                steps=30,
+                guidance=5.0,
+                lora_strength=1.0,
+            )
+            self.assertIn("--fp8_fast", command)
+
+    def test_checkpoint_step_is_read_from_filename(self):
+        self.assertEqual(
+            inference.checkpoint_step_from_filename(Path("nagharsubject_high-step00000600.safetensors")),
+            600,
+        )
+        self.assertIsNone(inference.checkpoint_step_from_filename(Path("checkpoint.safetensors")))
+
+    def test_finalize_run_records_nested_video_and_latest_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = self.make_config(root)
+            run_dir = cfg.output_root / "run"
+            nested = run_dir / "nested"
+            nested.mkdir(parents=True)
+            video = nested / "clip.mp4"
+            video.write_bytes(b"video")
+            outputs = inference.InferencePipeline(cfg, dry_run=False)._finalize_run(run_dir)
+            self.assertEqual(outputs, [str(video.resolve())])
+            latest = json.loads((cfg.output_root / "latest_run.json").read_text(encoding="utf-8"))
+            self.assertEqual(latest["outputs"], outputs)
 
     def test_invalid_frame_count_is_rejected(self):
         with self.assertRaises(RuntimeError):

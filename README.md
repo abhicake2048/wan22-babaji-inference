@@ -1,6 +1,6 @@
 # Babaji Wan 2.2 I2V inference
 
-This is a standalone inference harness for the downloaded step-200 `nagharsubject` high-noise LoRA. It generates silent ~5.1-second Babaji video snippets from a 768×576 first-frame image using Wan 2.2 I2V-A14B and Musubi Tuner.
+This is a standalone inference harness for `nagharsubject` high-noise LoRA checkpoints. It generates silent ~5.1-second Babaji video snippets from a 768×576 first-frame image using Wan 2.2 I2V-A14B and Musubi Tuner. Step 200 is locally verified; the comparison runner also accepts structurally compatible 400- and 600-step checkpoints.
 
 The adapter is validated before every run and is attached only to the Wan 2.2 high-noise expert. The base low-noise expert remains unmodified because no low-noise LoRA is present in the supplied checkpoint folder.
 
@@ -9,20 +9,25 @@ The adapter is validated before every run and is attached only to the Wan 2.2 hi
 ```text
 wan22_babaji_inference/
 ├── inference.py                  # inspect, download, preflight, single, batch
+├── compare_checkpoints.py        # fixed-input 200/400/600 comparison
+├── setup_linux.sh               # Linux/RTX 5090/RunPod environment
 ├── setup_runpod.sh              # pinned Musubi/PyTorch environment
 ├── run_inference.sh             # environment-aware launcher
+├── run_compare.sh               # checkpoint-comparison launcher
 ├── .env.example                 # deployment paths and profile
+├── .env.rtx5090.example         # RTX 5090 paths and profile
 ├── requirements.txt
 ├── prompts/babaji_snippets.jsonl
 ├── tests/test_inference.py
 ├── RUNPOD_GUIDE.md
+├── RTX5090_GUIDE.md
 ├── OOM_TROUBLESHOOTING.md
 ├── CHECKPOINT.md
 ├── HARDWARE.md
 └── RESPONSIBLE_USE.md
 ```
 
-For a complete first-time walkthrough—including GitHub upload, RunPod Pod creation, SCP commands for the LoRA and reference images, prompts, tuning, output download, and troubleshooting—follow [`RUNPOD_GUIDE.md`](RUNPOD_GUIDE.md).
+For a complete first-time walkthrough—including GitHub upload, SCP commands for the LoRAs and reference images, checkpoint comparisons, prompts, and saved-video download—follow [`RTX5090_GUIDE.md`](RTX5090_GUIDE.md) for a remote RTX 5090 or [`RUNPOD_GUIDE.md`](RUNPOD_GUIDE.md) for RunPod.
 
 ## 1. Upload the workspace
 
@@ -59,7 +64,7 @@ The setup pins Musubi Tuner to the same known revision used by the training harn
 bash run_inference.sh inspect
 ```
 
-This reads the safetensors metadata, confirms step 200, rank/alpha 32/32, timestep range 900–1000, the high-noise I2V base name, and the exact SHA-256 recorded in `CHECKPOINT.md`.
+This reads the safetensors metadata, confirms that the metadata step matches the filename, rank/alpha 32/32, timestep range 900–1000, and the high-noise I2V base name. Step 200 is checked against the exact SHA-256 recorded in `CHECKPOINT.md`; later checkpoints can be pinned with `EXPECTED_LORA_SHA256` or the comparison hash manifest.
 
 ## 4. Download the pinned base models
 
@@ -114,6 +119,8 @@ Each run creates a timestamped directory under `OUTPUT_ROOT` with:
 - `result.json` listing produced videos;
 - `resolved_prompts.txt` for batch runs.
 
+`OUTPUT_ROOT/latest_run.json` always points to the most recently completed run and its absolute video paths. A successful process that produces no video is treated as an error rather than silently reported as complete.
+
 The default geometry matches the training data: 768×576, 81 frames, 16 FPS, 30 inference steps, flow shift 5, and expert boundary 900. Musubi's `--video_size` order is height then width, so the command passes `576 768`.
 
 ## Memory profiles
@@ -124,6 +131,9 @@ Edit `MEMORY_PROFILE` in `.env`:
 - `quality`: native FP16 with no block swapping; fastest, but the LoRA merge/cast peak can exceed an 80 GB GPU.
 - `balanced`: scaled FP8 plus FP8 T5; intended for 48 GB-class GPUs.
 - `low_vram`: FP8 plus 20-block CPU swapping; intended for 24 GB cards and considerably slower.
+- `rtx5090_quality`: scaled FP8 plus 12 swapped blocks for 32 GB Blackwell; use for checkpoint selection.
+- `rtx5090_fast`: adds fast FP8 arithmetic for throughput, with a documented quality tradeoff.
+- `rtx5090_safe`: scaled FP8 plus 20 swapped blocks for additional 5090 OOM headroom.
 
 Dry-run any command before spending GPU time:
 

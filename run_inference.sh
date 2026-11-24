@@ -3,16 +3,26 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$ROOT_DIR/.env" ]]; then
+  override_names=(SYSTEM_ROOT RUNPOD_ROOT MODEL_ROOT OUTPUT_ROOT MUSUBI_DIR VENV_DIR HF_HOME LORA_PATH EXPECTED_LORA_SHA256 REFERENCE_ROOT REFERENCE_IMAGE MEMORY_PROFILE PYTORCH_CUDA_ALLOC_CONF LORA_STRENGTH SEED VERIFY_MODEL_HASHES VERIFY_LORA_HASH HF_TOKEN MUSUBI_COMMIT TORCH_INDEX_URL)
+  declare -A caller_overrides=()
+  for name in "${override_names[@]}"; do
+    if [[ -v "$name" ]]; then
+      caller_overrides["$name"]="${!name}"
+    fi
+  done
   set -a
   # shellcheck disable=SC1091
   source "$ROOT_DIR/.env"
   set +a
+  for name in "${!caller_overrides[@]}"; do
+    export "$name=${caller_overrides[$name]}"
+  done
 fi
 
-RUNPOD_ROOT="${RUNPOD_ROOT:-/workspace}"
-VENV_DIR="${VENV_DIR:-$RUNPOD_ROOT/venvs/wan22-babaji}"
+SYSTEM_ROOT="${SYSTEM_ROOT:-${RUNPOD_ROOT:-/workspace}}"
+VENV_DIR="${VENV_DIR:-$SYSTEM_ROOT/venvs/wan22-babaji}"
 if [[ ! -x "$VENV_DIR/bin/python" ]]; then
-  echo "Python environment is missing at $VENV_DIR. Run setup_runpod.sh first." >&2
+  echo "Python environment is missing at $VENV_DIR. Run setup_linux.sh first." >&2
   exit 1
 fi
 

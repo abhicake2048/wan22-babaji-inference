@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import struct
@@ -19,8 +20,11 @@ from typing import Any, Iterable, Sequence
 
 
 MUSUBI_COMMIT_DEFAULT = "f8a1b03794a49239a3539015075f5123d6c07d66"
-LORA_SHA256 = "a05589023b0128de81a599e70632bec1a2e5cc7c172718182d25602f6e8311b4"
-LORA_FILENAME = "nagharsubject_high-step00000200.safetensors"
+DEFAULT_LORA_FILENAME = "nagharsubject_high-step00000200.safetensors"
+KNOWN_LORA_HASHES = {
+    DEFAULT_LORA_FILENAME: "a05589023b0128de81a599e70632bec1a2e5cc7c172718182d25602f6e8311b4",
+}
+CHECKPOINT_STEP_PATTERN = re.compile(r"-step0*(\d+)\.safetensors$", re.IGNORECASE)
 TRIGGER_TOKEN = "nagharsubject"
 
 DEFAULT_PROMPT = (
@@ -73,8 +77,30 @@ PROFILE_ARGS = {
     "quality_offload": ("--blocks_to_swap", "8", "--lazy_loading", "--vae_cache_cpu"),
     "balanced": ("--fp8", "--fp8_scaled", "--fp8_t5", "--lazy_loading", "--vae_cache_cpu"),
     "low_vram": ("--fp8", "--fp8_t5", "--blocks_to_swap", "20", "--lazy_loading", "--vae_cache_cpu"),
+    # RTX 5090 has 32 GiB VRAM. Keep only the active Wan 2.2 expert loaded,
+    # stream part of it from system RAM, and use Blackwell-compatible FP8.
+    "rtx5090_quality": (
+        "--fp8", "--fp8_scaled", "--fp8_t5", "--blocks_to_swap", "12",
+        "--lazy_loading", "--vae_cache_cpu", "--force_v2_1_time_embedding",
+    ),
+    "rtx5090_fast": (
+        "--fp8", "--fp8_scaled", "--fp8_fast", "--fp8_t5", "--blocks_to_swap", "12",
+        "--lazy_loading", "--vae_cache_cpu", "--force_v2_1_time_embedding",
+    ),
+    "rtx5090_safe": (
+        "--fp8", "--fp8_scaled", "--fp8_t5", "--blocks_to_swap", "20",
+        "--lazy_loading", "--vae_cache_cpu", "--force_v2_1_time_embedding",
+    ),
 }
-PROFILE_MIN_VRAM_GIB = {"quality": 70.0, "quality_offload": 40.0, "balanced": 40.0, "low_vram": 22.0}
+PROFILE_MIN_VRAM_GIB = {
+    "quality": 70.0,
+    "quality_offload": 40.0,
+    "balanced": 40.0,
+    "low_vram": 22.0,
+    "rtx5090_quality": 30.0,
+    "rtx5090_fast": 30.0,
+    "rtx5090_safe": 30.0,
+}
 
 
 def load_dotenv(path: Path) -> None:
@@ -132,7 +158,16 @@ def safetensors_header(path: Path) -> dict[str, Any]:
     return json.loads(header.decode("utf-8"))
 
 
-def checkpoint_report(path: Path, verify_hash: bool) -> dict[str, Any]:
+def checkpoint_step_from_filename(path: Path) -> int | None:
+    match = CHECKPOINT_STEP_PATTERN.search(path.name)
+    return int(match.group(1)) if match else None
+
+
+def checkpoint_report(
+    path: Path,
+    verify_hash: bool,
+    expected_hash: str | None = None,
+) -> dict[str, Any]:
     if not path.is_file():
         raise RuntimeError(f"LoRA checkpoint not found: {path}")
     header = safetensors_header(path)
@@ -140,7 +175,6 @@ def checkpoint_report(path: Path, verify_hash: bool) -> dict[str, Any]:
     tensors = [key for key in header if key != "__metadata__"]
     actual_hash = sha256_file(path) if verify_hash else None
     expected = {
-        "ss_steps": "200",
         "ss_network_dim": "32",
         "ss_network_alpha": "32.0",
         "modelspec.timestep_range": "900,1000",
@@ -156,8 +190,23 @@ def checkpoint_report(path: Path, verify_hash: bool) -> dict[str, Any]:
             "expected": "Wan 2.2 I2V high-noise model",
             "actual": metadata.get("ss_sd_model_name"),
         }
-    if verify_hash and actual_hash != LORA_SHA256:
-        mismatches["sha256"] = {"expected": LORA_SHA256, "actual": actual_hash}
+    metadata_step = int(metadata.get("ss_steps", -1))
+    filename_step = checkpoint_step_from_filename(path)
+    if filename_step is None:
+        mismatches["filename"] = {
+            "expected": "a name ending in -step########.safetensors",
+            "actual": path.name,
+        }
+    elif metadata_step != filename_step:
+        mismatches["ss_steps"] = {"expected": filename_step, "actual": metadata_step}
+    pinned_hash = (expected_hash or KNOWN_LORA_HASHES.get(path.name) or "").strip().lower()
+    if pinned_hash and not re.fullmatch(r"[0-9a-f]{64}", pinned_hash):
+        mismatches["expected_sha256"] = {
+            "expected": "64 lowercase hexadecimal characters",
+            "actual": pinned_hash,
+        }
+    elif verify_hash and pinned_hash and actual_hash != pinned_hash:
+        mismatches["sha256"] = {"expected": pinned_hash, "actual": actual_hash}
     if mismatches:
         raise RuntimeError(f"Checkpoint validation failed: {json.dumps(mismatches, indent=2)}")
     return {
@@ -166,7 +215,7 @@ def checkpoint_report(path: Path, verify_hash: bool) -> dict[str, Any]:
         "sha256": actual_hash or "not checked",
         "tensor_count": len(tensors),
         "output_name": metadata.get("ss_output_name"),
-        "steps": int(metadata["ss_steps"]),
+        "steps": metadata_step,
         "epoch": int(metadata.get("ss_epoch", 0)),
         "rank": int(float(metadata["ss_network_dim"])),
         "alpha": float(metadata["ss_network_alpha"]),
@@ -176,6 +225,7 @@ def checkpoint_report(path: Path, verify_hash: bool) -> dict[str, Any]:
         "training_frames": json.loads(metadata["ss_datasets"])[0]["target_frames"],
         "training_fps": json.loads(metadata["ss_datasets"])[0]["source_fps"],
         "trigger_token": TRIGGER_TOKEN,
+        "hash_pinned": bool(pinned_hash),
     }
 
 
@@ -203,18 +253,19 @@ class Config:
     seed: int
     verify_model_hashes: bool
     verify_lora_hash: bool
+    expected_lora_sha256: str | None = None
 
     @classmethod
     def from_env(cls) -> "Config":
         project_root = Path(__file__).resolve().parent
         workspace_root = project_root.parent
-        runpod_root = Path(os.environ.get("RUNPOD_ROOT", "/workspace")).expanduser()
+        runpod_root = Path(os.environ.get("SYSTEM_ROOT", os.environ.get("RUNPOD_ROOT", "/workspace"))).expanduser()
         local_mode = (workspace_root / "nagharsubject_high_checkpoints").exists()
         default_output = workspace_root / "wan22_babaji_outputs" if local_mode else runpod_root / "outputs/babaji_wan22_i2v"
         default_lora = first_existing(
             (
-                workspace_root / "nagharsubject_high_checkpoints/high" / LORA_FILENAME,
-                runpod_root / "nagharsubject_high_checkpoints/high" / LORA_FILENAME,
+                workspace_root / "nagharsubject_high_checkpoints/high" / DEFAULT_LORA_FILENAME,
+                runpod_root / "nagharsubject_high_checkpoints/high" / DEFAULT_LORA_FILENAME,
             )
         )
         default_references = first_existing(
@@ -239,6 +290,7 @@ class Config:
             seed=int(os.environ.get("SEED", "42")),
             verify_model_hashes=env_bool("VERIFY_MODEL_HASHES", True),
             verify_lora_hash=env_bool("VERIFY_LORA_HASH", True),
+            expected_lora_sha256=os.environ.get("EXPECTED_LORA_SHA256") or None,
         )
 
     def model_path(self, name: str) -> Path:
@@ -257,7 +309,11 @@ class InferencePipeline:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
 
     def inspect(self) -> dict[str, Any]:
-        report = checkpoint_report(self.cfg.lora_path, self.cfg.verify_lora_hash)
+        report = checkpoint_report(
+            self.cfg.lora_path,
+            self.cfg.verify_lora_hash,
+            self.cfg.expected_lora_sha256,
+        )
         print(json.dumps(report, indent=2), flush=True)
         return report
 
@@ -308,7 +364,7 @@ class InferencePipeline:
     def _assert_install(self) -> None:
         script = self.cfg.musubi_dir / "src/musubi_tuner/wan_generate_video.py"
         if not script.is_file():
-            raise RuntimeError(f"Musubi Tuner is missing at {self.cfg.musubi_dir}; run setup_runpod.sh")
+            raise RuntimeError(f"Musubi Tuner is missing at {self.cfg.musubi_dir}; run setup_linux.sh")
         expected = os.environ.get("MUSUBI_COMMIT", MUSUBI_COMMIT_DEFAULT)
         result = subprocess.run(
             ["git", "-C", str(self.cfg.musubi_dir), "rev-parse", "HEAD"],
@@ -323,7 +379,7 @@ class InferencePipeline:
         try:
             import torch
         except ImportError as error:
-            raise RuntimeError("PyTorch is unavailable; run setup_runpod.sh") from error
+            raise RuntimeError("PyTorch is unavailable; run setup_linux.sh") from error
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is unavailable. Wan 2.2 A14B inference requires an NVIDIA CUDA GPU.")
         properties = torch.cuda.get_device_properties(0)
@@ -337,7 +393,11 @@ class InferencePipeline:
         return {"name": properties.name, "vram_gib": round(vram_gib, 2), "torch": torch.__version__}
 
     def preflight(self, require_runtime: bool = True) -> dict[str, Any]:
-        checkpoint = checkpoint_report(self.cfg.lora_path, self.cfg.verify_lora_hash)
+        checkpoint = checkpoint_report(
+            self.cfg.lora_path,
+            self.cfg.verify_lora_hash,
+            self.cfg.expected_lora_sha256,
+        )
         if not self.cfg.reference_image.is_file():
             raise RuntimeError(f"Reference image not found: {self.cfg.reference_image}")
         missing_models = [
@@ -471,8 +531,27 @@ class InferencePipeline:
         run_dir.mkdir(parents=True, exist_ok=False)
         return run_dir
 
+    def _finalize_run(self, run_dir: Path) -> list[str]:
+        outputs = sorted(
+            str(path.resolve())
+            for path in run_dir.rglob("*")
+            if path.suffix.lower() in {".mp4", ".webm", ".mov"}
+        )
+        result = {
+            "finished_at": utc_now(),
+            "run_directory": str(run_dir.resolve()),
+            "outputs": outputs,
+            "dry_run": self.dry_run,
+        }
+        atomic_json(run_dir / "result.json", result)
+        if not outputs and not self.dry_run:
+            raise RuntimeError(f"Inference exited successfully but no video was saved under {run_dir}")
+        if not self.dry_run:
+            atomic_json(self.cfg.output_root / "latest_run.json", result)
+        return outputs
+
     def generate(self, args: argparse.Namespace) -> Path:
-        self.preflight(require_runtime=True)
+        preflight = self.preflight(require_runtime=True)
         reference = Path(args.reference).expanduser().resolve() if args.reference else self.cfg.reference_image
         if not reference.is_file():
             raise RuntimeError(f"Reference image not found: {reference}")
@@ -504,13 +583,12 @@ class InferencePipeline:
             "seed": seed,
             "profile": self.cfg.profile,
             "lora_strength": strength,
-            "lora_sha256": LORA_SHA256,
+            "lora_checkpoint": preflight["checkpoint"],
             "command": [str(value) for value in command],
         }
         atomic_json(run_dir / "request.json", request)
         self._run(command, run_dir)
-        outputs = sorted(str(path) for path in run_dir.iterdir() if path.suffix.lower() in {".mp4", ".webm", ".mov"})
-        atomic_json(run_dir / "result.json", {"finished_at": utc_now(), "outputs": outputs, "dry_run": self.dry_run})
+        self._finalize_run(run_dir)
         return run_dir
 
     def _resolve_reference(self, value: str | None) -> Path:
@@ -550,7 +628,7 @@ class InferencePipeline:
         return records
 
     def batch(self, args: argparse.Namespace) -> Path:
-        self.preflight(require_runtime=True)
+        preflight = self.preflight(require_runtime=True)
         self._validate_shape(args.height, args.width, args.frames)
         source = Path(args.batch_file).expanduser().resolve()
         if not source.is_file():
@@ -584,13 +662,12 @@ class InferencePipeline:
                 "records": records,
                 "profile": self.cfg.profile,
                 "lora_strength": strength,
-                "lora_sha256": LORA_SHA256,
+                "lora_checkpoint": preflight["checkpoint"],
                 "command": [str(value) for value in command],
             },
         )
         self._run(command, run_dir)
-        outputs = sorted(str(path) for path in run_dir.iterdir() if path.suffix.lower() in {".mp4", ".webm", ".mov"})
-        atomic_json(run_dir / "result.json", {"finished_at": utc_now(), "outputs": outputs, "dry_run": self.dry_run})
+        self._finalize_run(run_dir)
         return run_dir
 
 
