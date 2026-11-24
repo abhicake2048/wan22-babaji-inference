@@ -14,6 +14,7 @@ wan22_babaji_inference/
 ├── setup_runpod.sh              # pinned Musubi/PyTorch environment
 ├── run_inference.sh             # environment-aware launcher
 ├── run_compare.sh               # checkpoint-comparison launcher
+├── start_inference.sh           # restart with chosen step/image/prompt/output
 ├── .env.example                 # deployment paths and profile
 ├── .env.rtx5090.example         # RTX 5090 paths and profile
 ├── requirements.txt
@@ -21,6 +22,7 @@ wan22_babaji_inference/
 ├── tests/test_inference.py
 ├── RUNPOD_GUIDE.md
 ├── RTX5090_GUIDE.md
+├── RESTART_INFERENCE.md
 ├── OOM_TROUBLESHOOTING.md
 ├── CHECKPOINT.md
 ├── HARDWARE.md
@@ -28,6 +30,8 @@ wan22_babaji_inference/
 ```
 
 For a complete first-time walkthrough—including GitHub upload, SCP commands for the LoRAs and reference images, checkpoint comparisons, prompts, and saved-video download—follow [`RTX5090_GUIDE.md`](RTX5090_GUIDE.md) for a remote RTX 5090 or [`RUNPOD_GUIDE.md`](RUNPOD_GUIDE.md) for RunPod.
+
+After initial setup, use [`RESTART_INFERENCE.md`](RESTART_INFERENCE.md) and `start_inference.sh` to choose a 200/400/600 checkpoint, provide any local image and prompt, and save automatically to a designated directory such as `D:\lip_sync\generated`.
 
 ## 1. Upload the workspace
 

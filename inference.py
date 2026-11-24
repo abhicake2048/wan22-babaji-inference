@@ -13,7 +13,7 @@ import shutil
 import struct
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -677,6 +677,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--prompt", help="single-generation prompt; the trigger token is added automatically")
     parser.add_argument("--negative-prompt", default=DEFAULT_NEGATIVE)
     parser.add_argument("--reference", help="single-generation first-frame image")
+    parser.add_argument(
+        "--output-root",
+        help="override OUTPUT_ROOT for this run; a timestamped run directory is created inside it",
+    )
     parser.add_argument("--batch-file", default=str(Path(__file__).resolve().parent / "prompts/babaji_snippets.jsonl"))
     parser.add_argument("--height", type=int, default=576)
     parser.add_argument("--width", type=int, default=768)
@@ -694,7 +698,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     project_root = Path(__file__).resolve().parent
     load_dotenv(project_root / ".env")
     args = parse_args(argv)
-    pipeline = InferencePipeline(Config.from_env(), dry_run=args.dry_run)
+    config = Config.from_env()
+    if args.output_root:
+        config = replace(config, output_root=Path(args.output_root).expanduser().resolve())
+    pipeline = InferencePipeline(config, dry_run=args.dry_run)
     if args.stage == "inspect":
         pipeline.inspect()
     elif args.stage == "download":

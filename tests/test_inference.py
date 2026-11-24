@@ -157,6 +157,10 @@ class InferenceTests(unittest.TestCase):
         )
         self.assertIsNone(inference.checkpoint_step_from_filename(Path("checkpoint.safetensors")))
 
+    def test_output_root_command_line_option_is_parsed(self):
+        args = inference.parse_args(("generate", "--output-root", "/mnt/d/lip_sync/generated"))
+        self.assertEqual(args.output_root, "/mnt/d/lip_sync/generated")
+
     def test_finalize_run_records_nested_video_and_latest_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
